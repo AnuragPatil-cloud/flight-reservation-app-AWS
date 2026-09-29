@@ -1,0 +1,12 @@
+/root/flight-reservation-app-AWS/FlightCheckInApplication/src/main/java/com/shivam/flightcheckinapp/FlightCheckInApplication.java
+/root/flight-reservation-app-AWS/FlightCheckInApplication/src/main/java/com/shivam/flightcheckinapp/config/AppConfig.java
+/root/flight-reservation-app-AWS/FlightCheckInApplication/src/main/java/com/shivam/flightcheckinapp/config/GlobalExceptionHandler.java
+/root/flight-reservation-app-AWS/FlightCheckInApplication/src/main/java/com/shivam/flightcheckinapp/config/SecurityConfig.java
+/root/flight-reservation-app-AWS/FlightCheckInApplication/src/main/java/com/shivam/flightcheckinapp/controllers/CheckInController.java
+/root/flight-reservation-app-AWS/FlightCheckInApplication/src/main/java/com/shivam/flightcheckinapp/dtos/Booking.java
+/root/flight-reservation-app-AWS/FlightCheckInApplication/src/main/java/com/shivam/flightcheckinapp/dtos/CheckInRequest.java
+/root/flight-reservation-app-AWS/FlightCheckInApplication/src/main/java/com/shivam/flightcheckinapp/dtos/User.java
+/root/flight-reservation-app-AWS/FlightCheckInApplication/src/main/java/com/shivam/flightcheckinapp/entities/CheckIn.java
+/root/flight-reservation-app-AWS/FlightCheckInApplication/src/main/java/com/shivam/flightcheckinapp/repos/CheckInRepository.java
+/root/flight-reservation-app-AWS/FlightCheckInApplication/src/main/java/com/shivam/flightcheckinapp/services/CheckInService.java
+/root/flight-reservation-app-AWS/FlightCheckInApplication/src/main/java/com/shivam/flightcheckinapp/services/JwtService.java
