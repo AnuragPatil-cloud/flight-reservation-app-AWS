@@ -1,405 +1,345 @@
-
 pipeline {
 
     agent any
 
+    options {
+        timestamps()
+        disableConcurrentBuilds()
+        timeout(time: 60, unit: 'MINUTES')
+    }
+
     environment {
         AWS_REGION = 'ap-south-1'
-
-        ECR_REGISTRY = ''
-        ECR_ACCOUNT_ID = ''
 
         RESERVATION_REPO = 'flight-reservation-dev-reservation'
         CHECKIN_REPO     = 'flight-reservation-dev-checkin'
         FRONTEND_REPO    = 'flight-reservation-dev-frontend'
 
-        IMAGE_TAG = "${BUILD_NUMBER}"
+        GIT_REPO = 'https://github.com/AnuragPatil-cloud/flight-reservation-app-AWS.git'
+        GIT_BRANCH = 'main'
 
         SONARQUBE_ENV = 'Sonarqube'
 
-        GITOPS_DIR = 'gitops'
+        IMAGE_TAG = "${BUILD_NUMBER}"
     }
 
     stages {
 
-        // =========================================================
-        // 1. CHECKOUT
-        // =========================================================
-        stage('Checkout') {
-            steps {
-                checkout scm
-            }
-        }
-
-        // =========================================================
-        // 2. VERIFY AWS
-        // =========================================================
         stage('Verify AWS') {
             steps {
                 sh '''
                     set -e
 
-                    echo "======================================"
-                    echo "Checking AWS authentication"
-                    echo "======================================"
-
+                    echo "Checking AWS identity..."
                     aws sts get-caller-identity
 
-                    echo ""
-                    echo "AWS Region:"
-                    echo "${AWS_REGION}"
-
-                    echo ""
                     echo "Checking ECR repositories..."
+                    aws ecr describe-repositories \
+                        --region "$AWS_REGION" \
+                        --repository-names "$RESERVATION_REPO"
 
                     aws ecr describe-repositories \
-                        --region "${AWS_REGION}" \
-                        --query 'repositories[*].repositoryName' \
-                        --output table
+                        --region "$AWS_REGION" \
+                        --repository-names "$CHECKIN_REPO"
 
-                    echo ""
-                    echo "AWS verification completed successfully."
-                '''
+                    aws ecr describe-repositories \
+                        --region "$AWS_REGION" \
+                        --repository-names "$FRONTEND_REPO"
 
-                script {
-                    ECR_ACCOUNT_ID = sh(
-                        script: 'aws sts get-caller-identity --query Account --output text',
-                        returnStdout: true
-                    ).trim()
+                    AWS_ACCOUNT_ID=$(aws sts get-caller-identity \
+                        --query Account \
+                        --output text)
 
-                    ECR_REGISTRY = "${ECR_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
-
-                    echo "ECR Registry: ${ECR_REGISTRY}"
-                }
-            }
-        }
-
-        // =========================================================
-        // 3. BACKEND BUILD & TEST
-        // =========================================================
-        stage('Backend Build & Test') {
-            steps {
-                sh '''
-                    set -e
-
-                    echo "Building Reservation Application..."
-
-                    cd FlightReservationApplication
-
-                    mvn clean test package -DskipTests=false
-
-                    cd ..
-
-                    echo "Building Check-In Application..."
-
-                    cd FlightCheckInApplication
-
-                    mvn clean test package -DskipTests=false
-
-                    cd ..
-
-                    echo "Backend build and tests completed."
+                    echo "AWS Account: $AWS_ACCOUNT_ID"
+                    echo "AWS Region : $AWS_REGION"
                 '''
             }
         }
 
-        // =========================================================
-        // 4. FRONTEND BUILD
-        // =========================================================
-        stage('Frontend Build') {
-            steps {
-                sh '''
-                    set -e
-
-                    cd frontend
-
-                    echo "Installing frontend dependencies..."
-                    npm ci
-
-                    echo "Running frontend lint..."
-                    npm run lint
-
-                    echo "Building frontend..."
-                    npm run build
-
-                    cd ..
-
-                    echo "Frontend build completed."
-                '''
-            }
-        }
-
-        // =========================================================
-        // 5. SONARQUBE ANALYSIS
-        // =========================================================
-        stage('SonarQube Analysis') {
-            steps {
-                withCredentials([
-                    string(
-                        credentialsId: 'sonarqube-token',
-                        variable: 'SONAR_TOKEN'
-                    )
-                ]) {
-
-                    withSonarQubeEnv("${SONARQUBE_ENV}") {
-
-                        sh '''
-                            set -e
-
-                            echo "Running SonarQube analysis..."
-
-                            cd FlightReservationApplication
-
-                            mvn sonar:sonar \
-                                -Dsonar.token="${SONAR_TOKEN}"
-
-                            cd ..
-
-                            cd FlightCheckInApplication
-
-                            mvn sonar:sonar \
-                                -Dsonar.token="${SONAR_TOKEN}"
-
-                            cd ..
-
-                            echo "SonarQube analysis completed."
-                        '''
-                    }
-                }
-            }
-        }
-
-        // =========================================================
-        // 6. SONARQUBE QUALITY GATE
-        // =========================================================
-        stage('SonarQube Quality Gate') {
-            steps {
-                timeout(time: 5, unit: 'MINUTES') {
-
-                    script {
-                        def qualityGate = waitForQualityGate(
-                            abortPipeline: true
-                        )
-
-                        echo "SonarQube Quality Gate: ${qualityGate.status}"
-                    }
-                }
-            }
-        }
-
-        // =========================================================
-        // 7. DOCKER BUILD
-        // =========================================================
-        stage('Docker Build') {
-            steps {
-                sh '''
-                    set -e
-
-                    echo "Building Reservation Docker image..."
-
-                    docker build \
-                        -t ${RESERVATION_REPO}:${IMAGE_TAG} \
-                        -t ${RESERVATION_REPO}:latest \
-                        ./FlightReservationApplication
-
-                    echo "Building Check-In Docker image..."
-
-                    docker build \
-                        -t ${CHECKIN_REPO}:${IMAGE_TAG} \
-                        -t ${CHECKIN_REPO}:latest \
-                        ./FlightCheckInApplication
-
-                    echo "Building Frontend Docker image..."
-
-                    docker build \
-                        -t ${FRONTEND_REPO}:${IMAGE_TAG} \
-                        -t ${FRONTEND_REPO}:latest \
-                        ./frontend
-
-                    echo "Docker images built successfully."
-                '''
-            }
-        }
-
-        // =========================================================
-        // 8. ECR LOGIN
-        // =========================================================
-        stage('ECR Login') {
-            steps {
-                sh '''
-                    set -e
-
-                    echo "Logging in to Amazon ECR..."
-
-                    aws ecr get-login-password \
-                        --region "${AWS_REGION}" \
-                    | docker login \
-                        --username AWS \
-                        --password-stdin "${ECR_REGISTRY}"
-
-                    echo "ECR login successful."
-                '''
-            }
-        }
-
-        // =========================================================
-        // 9. PUSH IMAGES TO ECR
-        // =========================================================
-        stage('Push Images to ECR') {
-            steps {
-                sh '''
-                    set -e
-
-                    echo "Tagging Reservation image..."
-
-                    docker tag \
-                        ${RESERVATION_REPO}:${IMAGE_TAG} \
-                        ${ECR_REGISTRY}/${RESERVATION_REPO}:${IMAGE_TAG}
-
-                    docker tag \
-                        ${RESERVATION_REPO}:latest \
-                        ${ECR_REGISTRY}/${RESERVATION_REPO}:latest
-
-
-                    echo "Tagging Check-In image..."
-
-                    docker tag \
-                        ${CHECKIN_REPO}:${IMAGE_TAG} \
-                        ${ECR_REGISTRY}/${CHECKIN_REPO}:${IMAGE_TAG}
-
-                    docker tag \
-                        ${CHECKIN_REPO}:latest \
-                        ${ECR_REGISTRY}/${CHECKIN_REPO}:latest
-
-
-                    echo "Tagging Frontend image..."
-
-                    docker tag \
-                        ${FRONTEND_REPO}:${IMAGE_TAG} \
-                        ${ECR_REGISTRY}/${FRONTEND_REPO}:${IMAGE_TAG}
-
-                    docker tag \
-                        ${FRONTEND_REPO}:latest \
-                        ${ECR_REGISTRY}/${FRONTEND_REPO}:latest
-
-
-                    echo "Pushing Reservation image..."
-
-                    docker push \
-                        ${ECR_REGISTRY}/${RESERVATION_REPO}:${IMAGE_TAG}
-
-                    docker push \
-                        ${ECR_REGISTRY}/${RESERVATION_REPO}:latest
-
-
-                    echo "Pushing Check-In image..."
-
-                    docker push \
-                        ${ECR_REGISTRY}/${CHECKIN_REPO}:${IMAGE_TAG}
-
-                    docker push \
-                        ${ECR_REGISTRY}/${CHECKIN_REPO}:latest
-
-
-                    echo "Pushing Frontend image..."
-
-                    docker push \
-                        ${ECR_REGISTRY}/${FRONTEND_REPO}:${IMAGE_TAG}
-
-                    docker push \
-                        ${ECR_REGISTRY}/${FRONTEND_REPO}:latest
-
-
-                    echo "All images pushed successfully."
-                '''
-            }
-        }
-
-        // =========================================================
-        // 10. UPDATE GITOPS
-        // =========================================================
-        stage('Update GitOps') {
+        stage('Backend Build') {
             steps {
 
-                withCredentials([
-                    usernamePassword(
-                        credentialsId: 'github',
-                        usernameVariable: 'GITHUB_USER',
-                        passwordVariable: 'GITHUB_TOKEN'
-                    )
-                ]) {
-
+                dir('FlightReservationApplication') {
                     sh '''
                         set -e
 
-                        echo "Updating GitOps image tags..."
+                        echo "Building Flight Reservation backend..."
+                        mvn -B clean package -DskipTests
+                    '''
+                }
 
-                        cd ${GITOPS_DIR}
+                dir('FlightCheckInApplication') {
+                    sh '''
+                        set -e
 
-                        sed -i "s|newTag:.*|newTag: ${IMAGE_TAG}|g" kustomization.yaml
-
-                        echo "Updated GitOps configuration:"
-
-                        cat kustomization.yaml
-
-                        cd ..
-
-                        git config user.name "${GITHUB_USER}"
-                        git config user.email "${GITHUB_USER}@users.noreply.github.com"
-
-                        git add ${GITOPS_DIR}/
-
-                        git diff --cached --quiet || \
-                        git commit -m "Update application images to build ${IMAGE_TAG}"
-
-                        git push \
-                            https://${GITHUB_USER}:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git \
-                            HEAD:${GIT_BRANCH}
-
-                        echo "GitOps changes pushed successfully."
+                        echo "Building Flight Check-In backend..."
+                        mvn -B clean package -DskipTests
                     '''
                 }
             }
         }
 
-        // =========================================================
-        // 11. CLEANUP
-        // =========================================================
+        stage('Frontend Build') {
+            steps {
+                dir('frontend') {
+                    sh '''
+                        set -e
+
+                        echo "Configuring frontend API URL..."
+                        printf "VITE_API_URL=/api\\n" > .env
+
+                        echo "Installing frontend dependencies..."
+                        npm ci
+
+                        echo "Building frontend..."
+                        npm run build
+                    '''
+                }
+            }
+        }
+
+        stage('SonarQube Analysis') {
+            steps {
+
+                dir('FlightReservationApplication') {
+                    withSonarQubeEnv("${SONARQUBE_ENV}") {
+                        withCredentials([
+                            string(
+                                credentialsId: 'sonarqube-token',
+                                variable: 'SONAR_TOKEN'
+                            )
+                        ]) {
+                            sh '''
+                                set -e
+
+                                echo "Running SonarQube analysis for reservation backend..."
+
+                                mvn -B sonar:sonar \
+                                    -DskipTests \
+                                    -Dsonar.token="$SONAR_TOKEN"
+                            '''
+                        }
+                    }
+
+                    timeout(time: 10, unit: 'MINUTES') {
+                        waitForQualityGate abortPipeline: true
+                    }
+                }
+
+                dir('FlightCheckInApplication') {
+                    withSonarQubeEnv("${SONARQUBE_ENV}") {
+                        withCredentials([
+                            string(
+                                credentialsId: 'sonarqube-token',
+                                variable: 'SONAR_TOKEN'
+                            )
+                        ]) {
+                            sh '''
+                                set -e
+
+                                echo "Running SonarQube analysis for check-in backend..."
+
+                                mvn -B sonar:sonar \
+                                    -DskipTests \
+                                    -Dsonar.token="$SONAR_TOKEN"
+                            '''
+                        }
+                    }
+
+                    timeout(time: 10, unit: 'MINUTES') {
+                        waitForQualityGate abortPipeline: true
+                    }
+                }
+            }
+        }
+
+        stage('Docker Build') {
+            steps {
+                script {
+
+                    sh '''
+                        set -e
+
+                        echo "Building Reservation image..."
+                        docker build \
+                            -t "$RESERVATION_REPO:$IMAGE_TAG" \
+                            ./FlightReservationApplication
+
+                        echo "Building Check-In image..."
+                        docker build \
+                            -t "$CHECKIN_REPO:$IMAGE_TAG" \
+                            ./FlightCheckInApplication
+
+                        echo "Building Frontend image..."
+                        docker build \
+                            -t "$FRONTEND_REPO:$IMAGE_TAG" \
+                            ./frontend
+                    '''
+                }
+            }
+        }
+
+        stage('ECR Login') {
+            steps {
+                sh '''
+                    set -e
+
+                    AWS_ACCOUNT_ID=$(aws sts get-caller-identity \
+                        --query Account \
+                        --output text)
+
+                    ECR_REGISTRY="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+
+                    echo "Logging into ECR..."
+
+                    aws ecr get-login-password \
+                        --region "$AWS_REGION" |
+                    docker login \
+                        --username AWS \
+                        --password-stdin "$ECR_REGISTRY"
+                '''
+            }
+        }
+
+        stage('Tag Images') {
+            steps {
+                sh '''
+                    set -e
+
+                    AWS_ACCOUNT_ID=$(aws sts get-caller-identity \
+                        --query Account \
+                        --output text)
+
+                    ECR_REGISTRY="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+
+                    docker tag \
+                        "$RESERVATION_REPO:$IMAGE_TAG" \
+                        "$ECR_REGISTRY/$RESERVATION_REPO:$IMAGE_TAG"
+
+                    docker tag \
+                        "$CHECKIN_REPO:$IMAGE_TAG" \
+                        "$ECR_REGISTRY/$CHECKIN_REPO:$IMAGE_TAG"
+
+                    docker tag \
+                        "$FRONTEND_REPO:$IMAGE_TAG" \
+                        "$ECR_REGISTRY/$FRONTEND_REPO:$IMAGE_TAG"
+                '''
+            }
+        }
+
+        stage('Push Images to ECR') {
+            steps {
+                sh '''
+                    set -e
+
+                    AWS_ACCOUNT_ID=$(aws sts get-caller-identity \
+                        --query Account \
+                        --output text)
+
+                    ECR_REGISTRY="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+
+                    echo "Pushing Reservation image..."
+                    docker push \
+                        "$ECR_REGISTRY/$RESERVATION_REPO:$IMAGE_TAG"
+
+                    echo "Pushing Check-In image..."
+                    docker push \
+                        "$ECR_REGISTRY/$CHECKIN_REPO:$IMAGE_TAG"
+
+                    echo "Pushing Frontend image..."
+                    docker push \
+                        "$ECR_REGISTRY/$FRONTEND_REPO:$IMAGE_TAG"
+                '''
+            }
+        }
+
+        stage('Update GitOps') {
+            steps {
+                withCredentials([
+                    usernamePassword(
+                        credentialsId: 'github',
+                        usernameVariable: 'GIT_USERNAME',
+                        passwordVariable: 'GIT_PASSWORD'
+                    )
+                ]) {
+                    sh '''
+                        set -e
+
+                        AWS_ACCOUNT_ID=$(aws sts get-caller-identity \
+                            --query Account \
+                            --output text)
+
+                        ECR_REGISTRY="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+
+                        RESERVATION_IMAGE="${ECR_REGISTRY}/${RESERVATION_REPO}:${IMAGE_TAG}"
+                        CHECKIN_IMAGE="${ECR_REGISTRY}/${CHECKIN_REPO}:${IMAGE_TAG}"
+                        FRONTEND_IMAGE="${ECR_REGISTRY}/${FRONTEND_REPO}:${IMAGE_TAG}"
+
+                        echo "Updating GitOps image references..."
+
+                        find gitops -type f \
+                            \\( -name "*.yaml" -o -name "*.yml" \\) \
+                            -exec sed -i \
+                            "s#\\(flight-reservation-dev-reservation:\\)[^[:space:]]*#\\1${IMAGE_TAG}#g" {} +
+
+                        find gitops -type f \
+                            \\( -name "*.yaml" -o -name "*.yml" \\) \
+                            -exec sed -i \
+                            "s#\\(flight-reservation-dev-checkin:\\)[^[:space:]]*#\\1${IMAGE_TAG}#g" {} +
+
+                        find gitops -type f \
+                            \\( -name "*.yaml" -o -name "*.yml" \\) \
+                            -exec sed -i \
+                            "s#\\(flight-reservation-dev-frontend:\\)[^[:space:]]*#\\1${IMAGE_TAG}#g" {} +
+
+                        git config user.name "$GIT_USERNAME"
+                        git config user.email "$GIT_USERNAME@users.noreply.github.com"
+
+                        git status --short
+
+                        git add gitops
+
+                        if git diff --cached --quiet; then
+                            echo "No GitOps changes detected."
+                        else
+                            git commit -m "Update application images to build ${IMAGE_TAG}"
+
+                            set +x
+                            git push \
+                                "https://${GIT_USERNAME}:${GIT_PASSWORD}@github.com/AnuragPatil-cloud/flight-reservation-app-AWS.git" \
+                                "HEAD:${GIT_BRANCH}"
+                            set -x
+                        fi
+                    '''
+                }
+            }
+        }
+
         stage('Docker Cleanup') {
             steps {
                 sh '''
-                    echo "Cleaning unused Docker images..."
+                    set +e
 
-                    docker image prune -f || true
+                    docker rmi "$RESERVATION_REPO:$IMAGE_TAG" 2>/dev/null
+                    docker rmi "$CHECKIN_REPO:$IMAGE_TAG" 2>/dev/null
+                    docker rmi "$FRONTEND_REPO:$IMAGE_TAG" 2>/dev/null
 
-                    echo "Docker cleanup completed."
+                    docker image prune -f
                 '''
             }
         }
     }
 
-    // =============================================================
-    // POST ACTIONS
-    // =============================================================
     post {
-
         success {
             echo '''
             ==========================================
-            Jenkins Pipeline Completed Successfully
+            Jenkins Pipeline SUCCESS
             ==========================================
-
             Build: ${BUILD_NUMBER}
-
-            Images pushed to:
-            - Reservation ECR
-            - Check-In ECR
-            - Frontend ECR
-
-            GitOps repository updated.
-
-            Argo CD should now detect the Git change
-            and synchronize the application to EKS.
+            Images pushed to ECR.
+            GitOps manifests updated.
+            Argo CD can now synchronize the changes.
             ==========================================
             '''
         }
@@ -409,17 +349,13 @@ pipeline {
             ==========================================
             Jenkins Pipeline FAILED
             ==========================================
-
-            Build: ${BUILD_NUMBER}
-
-            Check the failed stage and Jenkins console
-            output for the exact error.
+            Check the failed stage and Jenkins console.
             ==========================================
             '''
         }
 
         always {
-            echo "Pipeline finished: ${BUILD_NUMBER}"
+            echo "Pipeline completed: ${BUILD_NUMBER}"
         }
     }
 }
