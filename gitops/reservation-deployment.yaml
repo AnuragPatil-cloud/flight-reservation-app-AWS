@@ -20,7 +20,7 @@ spec:
         - name: flight-reservation-app
           # Jenkins' "Update GitOps" stage rewrites this to the full ECR URI
           # <ACCOUNT_ID>.dkr.ecr.ap-south-1.amazonaws.com/flight-reservation-dev-reservation:<BUILD_NUMBER>
-          image: flight-reservation-dev-reservation:latest
+          image: 122384809035.dkr.ecr.ap-south-1.amazonaws.com/flight-reservation-dev-reservation:4
           imagePullPolicy: Always
           ports:
             - containerPort: 8080
