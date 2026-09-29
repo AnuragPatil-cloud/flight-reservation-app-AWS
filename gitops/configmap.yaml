@@ -11,4 +11,4 @@ data:
   # In-cluster service DNS - no change needed between environments.
   BOOKING_SERVICE_URL: "http://flight-reservation-service:8080/api/bookings"
   # Replace once the frontend LoadBalancer/ingress address is known.
-  FRONTEND_URL: "http://af91d514b2c874471ad4b1a8f39460e6-43260753.ap-south-1.elb.amazonaws.com "
+  FRONTEND_URL: "http://a0e2d3b2f580e4825b889d31f750dfee-899188192.ap-south-1.elb.amazonaws.com"
