@@ -1,247 +1,341 @@
-# ✈️ Flight Reservation Application — AWS/EKS Edition
+# ✈️ Flight Reservation System — End-to-End DevOps on AWS
 
-A full-stack flight reservation and check-in platform, built as a microservices system and shipped to production with an end-to-end DevOps pipeline: Terraform-provisioned AWS infrastructure, Jenkins CI, Docker, GitOps with Argo CD on EKS, RDS/S3/ECR, CloudWatch + SNS alerting, and Prometheus/Grafana monitoring.
+A full-stack **flight booking and check-in platform** (React + two Spring Boot microservices) that is provisioned with **Terraform**, built by **Jenkins**, scanned by **SonarQube**, stored in **Amazon ECR**, delivered to **Amazon EKS** through **Argo CD (GitOps)**, and observed with **Prometheus, Grafana and CloudWatch**.
 
-This is the AWS port of the original Azure/AKS build. Application source, UI, and business logic are unchanged — only the infrastructure, container registry, database, and deployment configuration were adapted for AWS. See [`flight-reservation-app-Azure`](https://github.com/AnuragPatil-cloud/flight-reservation-app-Azure) for the Azure edition this was ported from.
+The application is the vehicle; the focus of this repository is the **production-style AWS DevOps pipeline around it** — everything from creating the VPC to rolling a new container image onto the cluster is automated.
 
 <p align="center">
-  <img src="FRA-SCREENSHOTS/FRS-Home.png" alt="Flight Reservation System home page" width="850">
+  <img src="FRA-SCREENSHOTS/01-app-home.png" alt="Flight Reservation System home page" width="850">
 </p>
 
 <p align="center">
-  <img alt="Java 17" src="https://img.shields.io/badge/Java-17-orange?logo=openjdk&logoColor=white">
+  <img alt="Java 21" src="https://img.shields.io/badge/Java-21-orange?logo=openjdk&logoColor=white">
   <img alt="Spring Boot 3.3.5" src="https://img.shields.io/badge/Spring%20Boot-3.3.5-6DB33F?logo=springboot&logoColor=white">
   <img alt="React 19" src="https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black">
   <img alt="Vite 6" src="https://img.shields.io/badge/Vite-6-646CFF?logo=vite&logoColor=white">
-  <img alt="MariaDB" src="https://img.shields.io/badge/MariaDB-RDS-003545?logo=mariadb&logoColor=white">
-  <img alt="Docker" src="https://img.shields.io/badge/Docker-blue?logo=docker&logoColor=white">
-  <img alt="Kubernetes" src="https://img.shields.io/badge/EKS-Kubernetes-326CE5?logo=kubernetes&logoColor=white">
-  <img alt="Terraform" src="https://img.shields.io/badge/Terraform-AWS-7B42BC?logo=terraform&logoColor=white">
+  <img alt="MariaDB on RDS" src="https://img.shields.io/badge/MariaDB-RDS-003545?logo=mariadb&logoColor=white">
+  <img alt="Docker" src="https://img.shields.io/badge/Docker-2496ED?logo=docker&logoColor=white">
+  <img alt="Amazon EKS" src="https://img.shields.io/badge/Amazon%20EKS-326CE5?logo=kubernetes&logoColor=white">
+  <img alt="Terraform" src="https://img.shields.io/badge/Terraform-7B42BC?logo=terraform&logoColor=white">
   <img alt="Jenkins" src="https://img.shields.io/badge/CI-Jenkins-D24939?logo=jenkins&logoColor=white">
-  <img alt="Argo CD" src="https://img.shields.io/badge/GitOps-ArgoCD-EF7B4D?logo=argo&logoColor=white">
+  <img alt="Argo CD" src="https://img.shields.io/badge/GitOps-Argo%20CD-EF7B4D?logo=argo&logoColor=white">
+  <img alt="SonarQube" src="https://img.shields.io/badge/SonarQube-4E9BCD?logo=sonarqube&logoColor=white">
+  <img alt="Prometheus" src="https://img.shields.io/badge/Prometheus-E6522C?logo=prometheus&logoColor=white">
+  <img alt="Grafana" src="https://img.shields.io/badge/Grafana-F46800?logo=grafana&logoColor=white">
 </p>
+
+---
+
+## At a glance
+
+**What this project demonstrates**
+
+- **Infrastructure as Code** — 11 modular Terraform modules create the whole AWS environment (VPC, EC2, EKS, RDS, S3, ECR, IAM, SNS, CloudWatch).
+- **CI pipeline** — a 10-stage Jenkins pipeline: verify AWS → build → SonarQube analysis → Docker build → push to ECR → update GitOps manifests.
+- **GitOps continuous delivery** — Argo CD watches the `gitops/` folder and auto-syncs, self-heals and prunes the EKS namespace.
+- **Observability & alerting** — `kube-prometheus-stack` (Prometheus, Grafana, Alertmanager) inside the cluster, plus CloudWatch alarms that email through SNS.
+- **Security-minded design** — private EKS API endpoint, private encrypted RDS, least-open security groups, IAM instance roles instead of stored AWS keys, non-root backend containers.
+
+| | |
+|---|---|
+| **Cloud / region** | AWS · `ap-south-1` (Mumbai) |
+| **Kubernetes** | Amazon EKS 1.35 · 2 × `c7i-flex.large` worker nodes |
+| **Database** | Amazon RDS MariaDB 10.11 (private, encrypted, gp3) |
+| **CI** | Jenkins on EC2 · 10 stages · build #4 finished in 8 min 44 s |
+| **CD** | Argo CD — automated sync, self-heal, prune |
+| **Observability** | Prometheus · Grafana · Alertmanager · CloudWatch → SNS email |
+| **IaC** | Terraform ≥ 1.6 · AWS provider 6.66.0 |
+
+> This is the AWS edition of the project, ported from the original Azure/AKS build: [`flight-reservation-app-Azure`](https://github.com/AnuragPatil-cloud/flight-reservation-app-Azure).
 
 ---
 
 ## Table of contents
 
-- [Overview](#overview)
 - [Features](#features)
-- [Application screenshots](#application-screenshots)
 - [Architecture](#architecture)
 - [Tech stack](#tech-stack)
+- [Screenshots](#screenshots)
+- [CI/CD pipeline](#cicd-pipeline-jenkins--ecr)
+- [GitOps deployment](#gitops-deployment-argo-cd--eks)
+- [Infrastructure (Terraform)](#infrastructure-terraform)
+- [Monitoring & alerting](#monitoring--alerting)
 - [Repository layout](#repository-layout)
 - [API reference](#api-reference)
-- [Infrastructure (Terraform)](#infrastructure-terraform)
-- [CI/CD pipeline (Jenkins + ECR)](#cicd-pipeline-jenkins--ecr)
-- [GitOps deployment (Argo CD + EKS)](#gitops-deployment-argo-cd--eks)
-- [Monitoring](#monitoring)
-- [Getting started locally](#getting-started-locally)
-- [Deploying to AWS](#deploying-to-aws)
+- [Run locally](#run-locally)
+- [Deploy to AWS](#deploy-to-aws)
 - [Security notes](#security-notes)
 - [Roadmap](#roadmap)
 - [Author](#author)
 
 ---
 
-## Overview
-
-This project is a **flight booking and check-in system** split into three independently deployable services — a React SPA, a reservation backend, and a check-in backend — backed by a shared MariaDB database (run as **Amazon RDS** in this edition, not as a pod). It doubles as a reference implementation of a **production-style AWS DevOps pipeline**: infrastructure as code, containerized builds, automated testing, GitOps-driven continuous delivery, and cluster observability.
-
-Everything from provisioning the AWS VPC to promoting a new container image into the running EKS cluster is automated.
-
 ## Features
 
-**Traveller-facing**
-- Register / log in with JWT-based authentication
-- Search flights by origin, destination, and date
-- Book a flight and view a personal booking list
-- Download a generated PDF e-ticket for a booking
-- Self-service profile view and update
-- Online check-in with baggage count, decoupled into its own service
+**Traveller**
+- Register and log in (JWT authentication)
+- Search flights by origin, destination and date
+- Book a flight through a (simulated) payment step
+- View personal bookings and **download a PDF e-ticket** (generated with iTextPDF)
+- View and update profile
+- **Online check-in** with baggage count, handled by a separate check-in service
 
-**Admin-facing**
-- Admin login (separate authentication guard from traveller login)
-- Create, update, and delete flights
-- View the full flight list and the list of registered admins
-- Add additional admin accounts
+**Admin**
+- Separate admin login and profile
+- Add and delete flights, and view the full flight list
+- Add admin accounts and view the admin list
 
 **Platform**
 - Stateless JWT auth shared across two independent Spring Boot services
-- Nginx-based single-origin routing so the SPA never deals with CORS
-- Fully automated build → scan → image → deploy pipeline
-- Self-healing, auto-synced GitOps deployment
-- CloudWatch alarms + SNS email alerting on EC2/RDS metrics, baked into the infrastructure code
+- The check-in service validates the booking (and that it belongs to the caller) by calling the reservation service
+- Nginx reverse proxy gives the browser a single origin, so the SPA never deals with CORS or service addresses
+- Fully automated build → scan → image → deploy flow with self-healing GitOps
 
-## Application screenshots
-
-| Home | Login | Register |
-|---|---|---|
-| <img src="FRA-SCREENSHOTS/FRS-Home.png" width="280"> | <img src="FRA-SCREENSHOTS/FRS-Login page.png" width="280"> | <img src="FRA-SCREENSHOTS/FRS-Registration page.png" width="280"> |
-
-| Search flights | Profile | Contact |
-|---|---|---|
-| <img src="FRA-SCREENSHOTS/FRS-search flights.png" width="280"> | <img src="FRA-SCREENSHOTS/FRS-profile page.png" width="280"> | <img src="FRA-SCREENSHOTS/FRS-contact page.png" width="280"> |
-
-> Pipeline/infrastructure screenshots (Jenkins, Argo CD, CLI output) in `FRA-SCREENSHOTS/` are from the original Azure/AKS build and are being replaced with AWS/EKS equivalents as the migration is completed.
+---
 
 ## Architecture
 
 ```mermaid
-flowchart TD
-    U([Browser]) --> FE["Nginx + React SPA<br/>(flight-frontend, :80)"]
+flowchart TB
+    user([Browser])
+    lb["AWS Load Balancer<br/>(Service type LoadBalancer)"]
 
-    FE -- "/api/*" --> RES["Reservation Service<br/>Spring Boot :8080"]
-    FE -- "/api/checkin/*" --> CHK["Check-in Service<br/>Spring Boot :8081"]
+    subgraph vpc["AWS VPC · ap-south-1 · 2 Availability Zones"]
+        subgraph pub["Public subnets"]
+            jenkins["VM1 · Jenkins + SonarQube"]
+            ops["VM2 · kubectl / Helm / Argo CD CLI"]
+        end
 
-    CHK -- "validates booking via" --> RES
+        subgraph eks["EKS cluster · private subnets · 2 nodes"]
+            fe["flight-frontend<br/>Nginx + React :80"]
+            res["flight-reservation-service<br/>Spring Boot :8080"]
+            chk["flight-checkin-service<br/>Spring Boot :8081"]
+            argo["Argo CD"]
+            mon["Prometheus · Grafana · Alertmanager"]
+        end
 
-    RES --> DB[(Amazon RDS MariaDB<br/>flightdb / checkin_db)]
-    CHK --> DB
+        subgraph dbs["Database subnets"]
+            rds[("Amazon RDS<br/>MariaDB 10.11")]
+        end
+    end
 
-    RES -. "generates" .-> PDF[/PDF e-ticket via iText/]
+    ecr[("Amazon ECR<br/>3 repositories")]
+
+    user --> lb --> fe
+    fe -->|"/api/*"| res
+    fe -->|"/api/checkin/*"| chk
+    chk -->|"validates booking"| res
+    res --> rds
+    chk --> rds
+    jenkins -->|"push images"| ecr
+    ecr -->|"pull images"| eks
+    ops -->|"kubectl / helm via private API endpoint"| eks
 ```
 
-The frontend is served by **Nginx on port 80** and acts as the single origin for the browser. It reverse-proxies:
+The frontend is served by **Nginx on port 80** and is the only entry point for the browser. It reverse-proxies:
 
-- `/api/checkin/*` → `flight-checkin-service:8081`
-- `/api/*` → `flight-reservation-service:8080`
-- everything else → the React static build (SPA fallback)
+| Path | Target |
+|---|---|
+| `/api/checkin/*` | `flight-checkin-service:8081` |
+| `/api/*` | `flight-reservation-service:8080` |
+| everything else | React static build (SPA fallback to `index.html`) |
 
-This means the UI never needs to know the backend service addresses at runtime — only Nginx does — which keeps the two backend services free to move, scale, or restart independently.
-
-### Delivery pipeline
+### Delivery flow
 
 ```mermaid
 flowchart LR
-    Dev([git push]) --> Jenkins["Jenkins on VM1<br/>build . test . scan"]
-    Jenkins -- "docker push" --> ECR[(Amazon ECR<br/>flight-reservation-dev-star)]
-    Jenkins -- "commit new image tag" --> Git[(GitOps repo<br/>/gitops)]
-    Git --> Argo["Argo CD<br/>auto-sync + self-heal"]
-    Argo --> EKS["EKS cluster<br/>flight-reservation namespace"]
-    Mon["VM2 (helm/kubectl/argocd CLI)"] -- "helm install" --> Prom["kube-prometheus-stack<br/>(Prometheus/Grafana/Alertmanager)"]
-    Prom -.-> EKS
-    EKS -. "metrics" .-> CW[CloudWatch]
-    CW --> SNS[SNS email alerts]
+    dev([Developer]) -->|git push| gh[("GitHub<br/>main")]
+    gh -->|checkout| jk["Jenkins<br/>10-stage pipeline"]
+    jk --> build["Maven + Vite build"] --> sonar["SonarQube<br/>analysis"] --> docker["Docker build<br/>3 images"]
+    docker -->|"push :BUILD_NUMBER"| ecr[("Amazon ECR")]
+    jk -->|"commit new image tags<br/>to gitops/"| gh
+    gh -->|"watched by"| argo["Argo CD<br/>auto-sync + self-heal"]
+    argo -->|deploys| eks["EKS<br/>flight-reservation namespace"]
 ```
+
+---
 
 ## Tech stack
 
 | Layer | Technology |
 |---|---|
-| Frontend | React 19, Vite 6, React Router 7, Redux Toolkit, Axios, React Toastify, Boxicons |
-| Reservation service | Java 17, Spring Boot 3.3.5, Spring Security, Spring Data JPA, JJWT, iTextPDF |
-| Check-in service | Java 17, Spring Boot 3.3.5, Spring Security, Spring Data JPA, JJWT |
-| Database | Amazon RDS MariaDB 10.11 (two logical schemas: `flightdb`, `checkin_db`) |
-| Containers | Docker, Nginx (frontend static/reverse proxy), Eclipse Temurin JRE (backend) |
-| Infrastructure as Code | Terraform (modular: vpc, security-groups, iam, ec2-jenkins, ec2-monitoring, eks, rds, s3, ecr, sns, cloudwatch) — kept in a separate repo/folder, not part of this package |
-| Cloud | Amazon Web Services (VPC, EC2, EKS, RDS, S3, ECR, CloudWatch, SNS) |
-| CI | Jenkins (self-hosted on an EC2 VM), SonarQube |
-| CD / GitOps | Argo CD (auto-sync, self-heal, prune) |
-| Orchestration | Amazon EKS, Kustomize-style manifests |
-| Monitoring | kube-prometheus-stack (Prometheus, Grafana, Alertmanager) via Helm |
+| Frontend | React 19, Vite 6, React Router 7, Redux Toolkit, Axios, React Toastify |
+| Reservation service | Java 21, Spring Boot 3.3.5, Spring Security, Spring Data JPA, JJWT, iTextPDF |
+| Check-in service | Java 21, Spring Boot 3.3.5, Spring Security, Spring Data JPA, JJWT |
+| Database | Amazon RDS MariaDB 10.11 |
+| Containers | Docker · Nginx 1.29 (frontend) · Eclipse Temurin 21 JRE Alpine (backends, non-root user) |
+| Infrastructure as Code | Terraform — modules: `vpc`, `security-groups`, `iam`, `ec2-jenkins`, `ec2-monitoring`, `eks`, `rds`, `s3`, `ecr`, `sns`, `cloudwatch` |
+| Cloud | AWS — VPC, EC2, EKS, RDS, S3, ECR, IAM, CloudWatch, SNS |
+| CI | Jenkins, Maven, npm, SonarQube (Community) |
+| CD / GitOps | Argo CD, Kubernetes manifests + Kustomize |
+| Monitoring | kube-prometheus-stack (Prometheus, Grafana, Alertmanager, node-exporter, kube-state-metrics) via Helm |
 
-## Repository layout
+---
 
-```
-flight-reservation-app-AWS/
-├── frontend/                      # React + Vite SPA, Nginx Dockerfile
-├── FlightReservationApplication/  # Spring Boot: users, flights, bookings, PDF tickets
-├── FlightCheckInApplication/      # Spring Boot: check-in workflow
-├── gitops/                        # Kubernetes manifests (Kustomize), synced by Argo CD
-├── argocd-application.yaml        # Argo CD Application definition
-├── monitoring/                    # kube-prometheus-stack values + setup notes
-├── docs/                          # Jenkins credentials setup notes
-├── FRA-SCREENSHOTS/               # Screenshots used in this README
-├── Jenkinsfile                    # Root CI/CD pipeline (builds, pushes to ECR)
-├── .gitignore
-└── README-DEPLOYMENT.md           # Detailed one-time deployment runbook
+## Screenshots
 
-# terraform/ lives separately - see the AWS DevOps runbook for its module layout
-# (vpc, security-groups, iam, ec2-jenkins, ec2-monitoring, eks, rds, s3, ecr, sns, cloudwatch).
-```
+### Application
 
-## API reference
+<table>
+  <tr>
+    <td align="center"><img src="FRA-SCREENSHOTS/02-app-login.png" alt="Login page" width="290"><br><sub><b>Login</b></sub></td>
+    <td align="center"><img src="FRA-SCREENSHOTS/03-app-registration.png" alt="Registration page" width="290"><br><sub><b>Register</b></sub></td>
+    <td align="center"><img src="FRA-SCREENSHOTS/04-app-profile.png" alt="User profile page" width="290"><br><sub><b>Profile</b></sub></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="FRA-SCREENSHOTS/05-app-search-flights.png" alt="Search flights page" width="290"><br><sub><b>Search &amp; book flights</b></sub></td>
+    <td align="center"><img src="FRA-SCREENSHOTS/06-app-my-bookings.png" alt="My bookings page with ticket download" width="290"><br><sub><b>My bookings + PDF ticket</b></sub></td>
+    <td align="center"><img src="FRA-SCREENSHOTS/07-app-contact.png" alt="Contact page" width="290"><br><sub><b>Contact</b></sub></td>
+  </tr>
+</table>
 
-### User service — `/api/users` (Reservation app)
+**Data persisted in Amazon RDS** — bookings, flights and users written by the running application:
 
-| Method | Endpoint | Description |
-|---|---|---|
-| POST | `/register` | Register a new user |
-| POST | `/login` | Authenticate and receive a JWT |
-| GET | `/{id}` | Fetch a user by ID |
-| GET | `/userList` | List all registered users |
-| PUT | `/update/{id}` | Update a user's profile |
+<p align="center">
+  <img src="FRA-SCREENSHOTS/08-rds-data-stored.png" alt="MariaDB tables and rows on RDS" width="600">
+</p>
 
-### Flight service — `/api/flights` (Reservation app)
+### Infrastructure as Code (Terraform)
 
-| Method | Endpoint | Description |
-|---|---|---|
-| POST | `/create` | Add a new flight (admin) |
-| GET | `/all` | List all flights |
-| GET | `/search` | Search flights by origin, destination, date |
-| PUT | `/update/{id}` | Update a flight (admin) |
-| DELETE | `/delete/{id}` | Remove a flight (admin) |
+<table>
+  <tr>
+    <td align="center"><img src="FRA-SCREENSHOTS/10-terraform-init-validate.png" alt="terraform init and validate" width="420"><br><sub><b><code>terraform init</code> &amp; <code>validate</code></b></sub></td>
+    <td align="center"><img src="FRA-SCREENSHOTS/11-terraform-aws-resources.png" alt="EC2 instances, EKS cluster and node group created by Terraform" width="420"><br><sub><b>Resources created: 2 EC2 VMs, EKS cluster, node group</b></sub></td>
+  </tr>
+</table>
 
-### Booking service — `/api/bookings` (Reservation app)
+### CI/CD
 
-| Method | Endpoint | Description |
-|---|---|---|
-| POST | `/book` | Create a booking |
-| GET | `/user/{userId}` | List a user's bookings |
-| GET | `/details/{bookingId}` | Get a single booking's details |
-| GET | `/download-ticket/{bookingId}` | Download the e-ticket as a generated PDF |
+**Jenkins — pipeline #4 green across all stages (8 min 44 s):**
 
-### Check-in service — `/api/checkin` (Check-in app)
+<p align="center">
+  <img src="FRA-SCREENSHOTS/20-jenkins-pipeline-success.png" alt="Jenkins pipeline success" width="850">
+</p>
 
-| Method | Endpoint | Description |
-|---|---|---|
-| POST | `/{bookingId}` | Check in a booking (`numberOfBags` param, JWT bearer token); the service validates the booking against the reservation service before completing check-in |
+**Argo CD — application `flight-reservation` is Healthy and Synced (3 Deployments, 3 Services, ConfigMap, Namespace):**
 
-## Infrastructure (Terraform)
+<p align="center">
+  <img src="FRA-SCREENSHOTS/21-argocd-synced-healthy.png" alt="Argo CD application tree, healthy and synced" width="850">
+</p>
 
-Terraform is **not included in this package** — per the AWS DevOps runbook, it's provisioned from its own modular stack:
+<details>
+<summary><b>SonarQube analysis</b> (click to expand)</summary>
 
-| Module | Provisions |
-|---|---|
-| `vpc` | VPC, public/private/database subnets across two AZs |
-| `security-groups` | Security groups for the VMs, EKS, and RDS |
-| `iam` | Instance roles (ECR push/pull, CloudWatch, EKS admin) |
-| `ec2-jenkins` | VM1 (`flight-reservation-dev-jenkins`) — Jenkins, Docker, SonarQube, Git, Maven, AWS CLI |
-| `ec2-monitoring` | VM2 (`flight-reservation-dev-monitoring`) — kubectl, Helm, Argo CD CLI, AWS CLI |
-| `eks` | The EKS cluster (`flight-reservation-dev-eks`), two `c7i-flex.large` nodes |
-| `rds` | Private MariaDB instance (`flight-reservation-dev-rds`), not publicly accessible |
-| `s3` | Bucket for important application files |
-| `ecr` | Three repositories: `flight-reservation-dev-reservation`, `flight-reservation-dev-checkin`, `flight-reservation-dev-frontend` |
-| `sns` | SNS topic + email subscription for alerts |
-| `cloudwatch` | Alarms for Jenkins/Monitoring VM CPU and RDS CPU/storage |
+<br>
 
-Applying the stack requires a `terraform.tfvars` with your AWS region, key pair, admin CIDR, and RDS/Grafana passwords — see the runbook for the full variable list and naming convention.
+Both backends are analysed on every pipeline run and pass the quality gate.
+
+<table>
+  <tr>
+    <td align="center"><img src="FRA-SCREENSHOTS/22-sonarqube-projects.png" alt="SonarQube projects" width="290"><br><sub><b>Projects</b></sub></td>
+    <td align="center"><img src="FRA-SCREENSHOTS/23-sonarqube-reservation-service.png" alt="SonarQube reservation service" width="290"><br><sub><b>Reservation service</b></sub></td>
+    <td align="center"><img src="FRA-SCREENSHOTS/24-sonarqube-checkin-service.png" alt="SonarQube check-in service" width="290"><br><sub><b>Check-in service</b></sub></td>
+  </tr>
+</table>
+
+</details>
+
+### Monitoring & alerting
+
+<table>
+  <tr>
+    <td align="center"><img src="FRA-SCREENSHOTS/34-grafana-cluster-networking.png" alt="Grafana cluster networking dashboard" width="420"><br><sub><b>Grafana — cluster networking (per namespace)</b></sub></td>
+    <td align="center"><img src="FRA-SCREENSHOTS/36-grafana-node-exporter.png" alt="Grafana node exporter dashboard" width="420"><br><sub><b>Grafana — node CPU / memory</b></sub></td>
+  </tr>
+</table>
+
+**CloudWatch alarms** (Jenkins CPU, monitoring-VM CPU, RDS CPU, RDS free storage) — all wired to an SNS email topic:
+
+<p align="center">
+  <img src="FRA-SCREENSHOTS/40-cloudwatch-alarms.png" alt="CloudWatch alarms" width="850">
+</p>
+
+<details>
+<summary><b>More monitoring screenshots</b> — Prometheus, Grafana, CloudWatch (click to expand)</summary>
+
+<br>
+
+**Prometheus**
+
+<table>
+  <tr>
+    <td align="center"><img src="FRA-SCREENSHOTS/30-prometheus-targets.png" alt="Prometheus target health" width="420"><br><sub><b>Target health</b></sub></td>
+    <td align="center"><img src="FRA-SCREENSHOTS/31-prometheus-up-query.png" alt="Prometheus up query" width="420"><br><sub><b><code>up</code> query — all scrape targets</b></sub></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="FRA-SCREENSHOTS/32-prometheus-app-pods.png" alt="kube_pod_info for flight-reservation namespace" width="420"><br><sub><b>Application pods in <code>flight-reservation</code></b></sub></td>
+    <td align="center"><img src="FRA-SCREENSHOTS/33-prometheus-pod-cpu.png" alt="Pod CPU usage query" width="420"><br><sub><b>Pod CPU usage</b></sub></td>
+  </tr>
+</table>
+
+**Grafana**
+
+<table>
+  <tr>
+    <td align="center"><img src="FRA-SCREENSHOTS/35-grafana-compute-resources-pod.png" alt="Grafana compute resources by pod" width="420"><br><sub><b>Compute resources — pod</b></sub></td>
+    <td align="center"><img src="FRA-SCREENSHOTS/37-grafana-api-server.png" alt="Grafana Kubernetes API server dashboard" width="420"><br><sub><b>Kubernetes API server</b></sub></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="FRA-SCREENSHOTS/38-grafana-alertmanager.png" alt="Grafana Alertmanager overview" width="420"><br><sub><b>Alertmanager overview</b></sub></td>
+    <td align="center"><img src="FRA-SCREENSHOTS/39-grafana-coredns.png" alt="Grafana CoreDNS dashboard" width="420"><br><sub><b>CoreDNS</b></sub></td>
+  </tr>
+</table>
+
+**CloudWatch alarm detail**
+
+<table>
+  <tr>
+    <td align="center"><img src="FRA-SCREENSHOTS/41-cloudwatch-jenkins-cpu.png" alt="Jenkins high CPU alarm" width="290"><br><sub><b>Jenkins VM CPU</b></sub></td>
+    <td align="center"><img src="FRA-SCREENSHOTS/42-cloudwatch-monitoring-cpu.png" alt="Monitoring VM high CPU alarm" width="290"><br><sub><b>Monitoring VM CPU</b></sub></td>
+    <td align="center"><img src="FRA-SCREENSHOTS/43-cloudwatch-rds-cpu.png" alt="RDS high CPU alarm" width="290"><br><sub><b>RDS CPU</b></sub></td>
+  </tr>
+</table>
+
+</details>
+
+---
 
 ## CI/CD pipeline (Jenkins + ECR)
 
-The root [`Jenkinsfile`](./Jenkinsfile) runs on the Terraform-provisioned Jenkins VM (VM1) and drives every merge to `main` through seven stages:
+The root [`Jenkinsfile`](./Jenkinsfile) runs on the Terraform-provisioned Jenkins VM (VM1). It uses `timestamps()`, `disableConcurrentBuilds()` and a 60-minute timeout.
 
-1. **Checkout** — pull the repository
-2. **Backend Build** — spin up an ephemeral MySQL container, run `mvn clean verify` against the reservation service (unit + integration tests) and package the check-in service
-3. **Frontend Checks** — `npm ci`, ESLint (non-blocking), and a production Vite build
-4. **SonarQube Analysis** — static analysis and quality-gate reporting
-5. **Docker Build** — build images for all three services, tagged for ECR
-6. **Push Images to ECR** — `aws ecr get-login-password` (using the VM1 instance role, no stored AWS keys), then push immutable build-numbered tags and `latest`
-7. **Update GitOps** — patch the image tags into `gitops/*-deployment.yaml` and push the commit back to `main` (`[skip ci]`)
-8. **Post Actions** — clean up the ephemeral database container and dangling images
+| # | Stage | What it does |
+|---|---|---|
+| 1 | **Verify AWS** | `aws sts get-caller-identity` and confirms the three ECR repositories exist |
+| 2 | **Backend Build** | `mvn clean package` for the reservation and check-in services |
+| 3 | **Frontend Build** | `npm ci` + `npm run build` (Vite), API base path set to `/api` |
+| 4 | **SonarQube Analysis** | `mvn sonar:sonar` for both backends using the `sonarqube-token` credential |
+| 5 | **Docker Build** | Builds the three images (reservation, check-in, frontend) |
+| 6 | **ECR Login** | `aws ecr get-login-password` using the VM's IAM instance role |
+| 7 | **Tag Images** | Tags images as `<account>.dkr.ecr.ap-south-1.amazonaws.com/<repo>:<BUILD_NUMBER>` |
+| 8 | **Push Images to ECR** | Pushes the three immutable, build-numbered tags |
+| 9 | **Update GitOps** | Rewrites the `image:` lines in `gitops/*-deployment.yaml`, commits and pushes to `main` |
+| 10 | **Docker Cleanup** | Removes local images and prunes dangling layers |
 
-Required Jenkins credentials are documented in [`docs/JENKINS-CREDENTIALS.md`](./docs/JENKINS-CREDENTIALS.md):
+**Credentials** ([`docs/JENKINS-CREDENTIALS.md`](./docs/JENKINS-CREDENTIALS.md)):
 
-- `sonarqube-token` — SonarQube token
-- `github` — GitHub credentials with push access to `main` (so the GitOps stage can commit)
-- AWS auth is via the **VM1 instance IAM role** — no AWS keys stored in Jenkins
+- `sonarqube-token` — SonarQube token (secret text)
+- `github` — GitHub username + PAT, used by the *Update GitOps* stage to push back to `main`
+- **No AWS access keys are stored in Jenkins** — ECR access comes from the VM1 IAM instance role.
+
+---
 
 ## GitOps deployment (Argo CD + EKS)
 
-The `gitops/` directory is a Kustomize-style manifest set — namespace, a ConfigMap (RDS connection strings, service URLs), the two Spring Boot Deployments/Services, and the frontend Deployment/Service — all in the `flight-reservation` namespace. MariaDB is **not** deployed as a pod in this edition; the app connects to the private RDS instance instead.
+The [`gitops/`](./gitops) folder holds the Kubernetes manifests for the `flight-reservation` namespace:
 
-[`argocd-application.yaml`](./argocd-application.yaml) points Argo CD at that folder on `main` with **automated sync, self-heal, and prune** enabled, so any commit that lands on `main` (including the Jenkins image-tag bump) is reconciled onto the cluster within seconds, and any manual `kubectl` drift is reverted automatically.
+| Manifest | Purpose |
+|---|---|
+| `namespace.yaml` | `flight-reservation` namespace |
+| `configmap.yaml` | RDS JDBC URLs, in-cluster booking-service URL, frontend URL |
+| `reservation-deployment.yaml` / `-service.yaml` | Reservation backend, port 8080 |
+| `checkin-deployment.yaml` / `-service.yaml` | Check-in backend, port 8081 |
+| `frontend-deployment.yaml` / `-service.yaml` | Nginx + React, exposed with a `LoadBalancer` Service on port 80 |
+| `secret.example.yaml` | Template for DB credentials (applied by hand, deliberately **not** part of `kustomization.yaml`, so Argo CD never overwrites it) |
+
+Each backend Deployment sets CPU/memory requests and limits and has liveness and readiness probes. MariaDB is **not** a pod — the services connect to the private RDS instance.
+
+[`argocd-application.yaml`](./argocd-application.yaml) points Argo CD at `gitops/` on `main` with **automated sync, self-heal and prune**, so a Jenkins image-tag commit is rolled out automatically and any manual `kubectl` drift is reverted.
 
 ```bash
 kubectl apply -f argocd-application.yaml
@@ -249,9 +343,34 @@ argocd app get flight-reservation
 argocd app sync flight-reservation
 ```
 
-## Monitoring
+---
 
-VM2 (kubectl, Helm, Argo CD CLI) is used to install **kube-prometheus-stack** *inside* the EKS cluster, rather than running Prometheus/Grafana on the VM itself — keeping the VM a thin control point and the metrics pipeline part of the same GitOps-managed cluster:
+## Infrastructure (Terraform)
+
+Everything lives in [`Terraform/`](./Terraform) and is split into modules wired together in `main.tf`.
+
+| Module | Provisions |
+|---|---|
+| `vpc` | VPC `10.0.0.0/16`, public / private / database subnets across 2 AZs, Internet Gateway, NAT Gateway, route tables |
+| `security-groups` | Jenkins SG (SSH 22, Jenkins 8080, SonarQube 9000 — **admin IP only**), monitoring SG (SSH — admin IP only), RDS SG (3306 — **VPC CIDR only**) |
+| `iam` | Jenkins role (ECR + CloudWatch agent), monitoring role (CloudWatch read-only + EKS describe), EKS cluster and node roles |
+| `ec2-jenkins` | VM1 `flight-reservation-dev-jenkins` — bootstraps Docker, Jenkins, Maven, Java 21 and a SonarQube container |
+| `ec2-monitoring` | VM2 `flight-reservation-dev-monitoring` — bootstraps AWS CLI, kubectl, Helm, Argo CD CLI, MariaDB client |
+| `eks` | Cluster `flight-reservation-dev-eks` (Kubernetes 1.35) with a **private-only API endpoint**, managed node group of 2 × `c7i-flex.large`, and an EKS access entry granting VM2 cluster-admin |
+| `rds` | MariaDB 10.11 on `db.t3.micro`, 20 GiB gp3 (autoscaling to 100 GiB), **encrypted**, **not publicly accessible**, subnet-group in the database subnets |
+| `s3` | Application-files bucket with versioning, server-side encryption and public access blocked |
+| `ecr` | `flight-reservation-dev-reservation`, `-checkin`, `-frontend` |
+| `sns` | Alerts topic with an email subscription |
+| `cloudwatch` | Alarms: Jenkins CPU, monitoring CPU, RDS CPU (threshold 80 %) and RDS free storage (< 5 GiB) |
+
+Helper scripts in [`Terraform/scripts/`](./Terraform/scripts): `create-checkin-db.sh`, `install-argocd.sh`, `install-monitoring.sh`, plus the EC2 user-data bootstrap scripts.
+
+---
+
+## Monitoring & alerting
+
+- **In-cluster metrics** — `kube-prometheus-stack` is installed into the EKS cluster from VM2 with Helm, so Prometheus, Grafana, Alertmanager, node-exporter and kube-state-metrics run next to the workloads they watch. Values files: [`monitoring/`](./monitoring) (Grafana as `ClusterIP`, admin password from a Kubernetes Secret) and [`Terraform/monitoring/`](./Terraform/monitoring) (Grafana exposed through a `LoadBalancer`, used by `install-monitoring.sh`).
+- **AWS-level alerts** — CloudWatch alarms on the two EC2 hosts and on RDS publish to an SNS topic that emails the administrator.
 
 ```bash
 helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
@@ -262,72 +381,196 @@ helm upgrade --install kube-prometheus-stack prometheus-community/kube-prometheu
   --values monitoring/kube-prometheus-stack-values.yaml
 ```
 
-AWS-side infrastructure (EC2, RDS) is watched separately by **CloudWatch alarms**, which notify an **SNS** topic by email. Application-level metrics can be added later by enabling the Spring Boot Actuator/Micrometer endpoints and pointing a `ServiceMonitor` at them.
+---
 
-## Getting started locally
+## Repository layout
 
-**Prerequisites:** Java 17, Node.js 20+, Maven, and a local MySQL/MariaDB instance.
+```
+flight-reservation-app-AWS/
+├── frontend/                       # React + Vite SPA, Nginx Dockerfile + reverse-proxy config
+├── FlightReservationApplication/   # Spring Boot: users, flights, bookings, PDF tickets (:8080)
+├── FlightCheckInApplication/       # Spring Boot: check-in workflow (:8081)
+├── Terraform/                      # AWS infrastructure (11 modules) + helper scripts
+├── gitops/                         # Kubernetes manifests synced by Argo CD
+├── monitoring/                     # kube-prometheus-stack values + Grafana secret template
+├── docs/                           # Jenkins credentials setup
+├── FRA-SCREENSHOTS/                # Screenshots used in this README
+├── Jenkinsfile                     # Root CI pipeline (build, scan, push to ECR, update GitOps)
+├── argocd-application.yaml         # Argo CD Application definition
+├── README-DEPLOYMENT.md            # Detailed one-time deployment notes
+└── README.md
+```
 
-1. **Clone the repo**
-   ```bash
-   git clone https://github.com/AnuragPatil-cloud/flight-reservation-app-AWS.git
-   cd flight-reservation-app-AWS
-   ```
+---
 
-2. **Reservation service** — override the datasource via environment variables (defaults to `localhost`), then:
-   ```bash
-   cd FlightReservationApplication
-   ./mvnw spring-boot:run   # serves on :8080
-   ```
+## API reference
 
-3. **Check-in service** — same idea, then:
-   ```bash
-   cd FlightCheckInApplication
-   ./mvnw spring-boot:run   # serves on :8081
-   ```
+All endpoints except `register` and `login` require a JWT: `Authorization: Bearer <token>`.
 
-4. **Frontend**
-   ```bash
-   cd frontend
-   npm install
-   VITE_API_URL=http://localhost:8080 VITE_API_CHECKIN_URL=http://localhost:8081 npm run dev
-   ```
-   The Vite dev server runs on `:5173` by default and talks directly to both backend ports.
+### Users — `/api/users` (reservation service)
 
-For a production-like run, build and run the three Docker images (`frontend`, `FlightReservationApplication`, `FlightCheckInApplication`) behind the provided `frontend/nginx.conf`, which is what the EKS deployment does.
+| Method | Endpoint | Description |
+|---|---|---|
+| POST | `/register` | Register a user (public) |
+| POST | `/login` | Authenticate and receive a JWT (public) |
+| GET | `/{id}` | Get a user by ID |
+| GET | `/userList` | List registered users |
+| PUT | `/update/{id}` | Update a user's profile |
 
-## Deploying to AWS
+### Flights — `/api/flights` (reservation service)
 
-The full one-time setup follows the AWS DevOps runbook's 18 phases. In short:
+| Method | Endpoint | Description |
+|---|---|---|
+| POST | `/create` | Add a flight |
+| GET | `/all` | List all flights |
+| GET | `/search?origin=&destination=&departureDate=` | Search flights |
+| PUT | `/update/{id}` | Update a flight |
+| DELETE | `/delete/{id}` | Delete a flight |
 
-1. `terraform apply` the (separate) Terraform stack to create the VPC, VM1, VM2, EKS cluster, RDS, S3, ECR, SNS, and CloudWatch alarms.
-2. Provision Jenkins on VM1 and add the credentials listed above (no AWS keys needed — use the instance role).
-3. Fill in `gitops/configmap.yaml` with the real RDS endpoint and frontend URL, and create `gitops/secret.yaml` from `gitops/secret.example.yaml` with the real RDS credentials (never commit the real file — it's gitignored).
-4. Point `argocd-application.yaml` at your fork/repo (already set to this repo) and `kubectl apply` it, then `kubectl apply -f gitops/secret.yaml` once.
-5. Push to `main` — Jenkins builds, pushes images to ECR, and updates the GitOps manifests; Argo CD takes it from there.
-6. Install kube-prometheus-stack from VM2 and confirm the SNS email subscription.
+### Bookings — `/api/bookings` (reservation service)
+
+| Method | Endpoint | Description |
+|---|---|---|
+| POST | `/book` | Create a booking |
+| GET | `/user/{userId}` | List a user's bookings |
+| GET | `/details/{bookingId}` | Get one booking |
+| GET | `/download-ticket/{bookingId}` | Download the PDF e-ticket |
+
+### Check-in — `/api/checkin` (check-in service)
+
+| Method | Endpoint | Description |
+|---|---|---|
+| POST | `/{bookingId}?numberOfBags=` | Check in a booking. The service calls the reservation service to confirm the booking exists and belongs to the caller |
+
+---
+
+## Run locally
+
+**Prerequisites:** Java 21, Node.js 20+, a local MariaDB/MySQL instance. Maven is provided through the included `mvnw` wrapper.
+
+**1. Clone**
+
+```bash
+git clone https://github.com/AnuragPatil-cloud/flight-reservation-app-AWS.git
+cd flight-reservation-app-AWS
+```
+
+**2. Point both backends at your local database.** Spring Boot reads these environment variables in preference to the values in `application.properties`:
+
+```bash
+export SPRING_DATASOURCE_URL="jdbc:mysql://localhost:3306/checkin_db?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true"
+export SPRING_DATASOURCE_USERNAME="<your-db-user>"
+export SPRING_DATASOURCE_PASSWORD="<your-db-password>"
+export FRONTEND_URL="http://localhost:5173"          # required by both services
+export BOOKING_SERVICE_URL="http://localhost:8080/api/bookings"   # check-in -> reservation
+```
+
+**3. Start the services (two terminals)**
+
+```bash
+cd FlightReservationApplication && ./mvnw spring-boot:run     # http://localhost:8080
+cd FlightCheckInApplication     && ./mvnw spring-boot:run     # http://localhost:8081
+```
+
+**4. Start the frontend**
+
+```bash
+cd frontend
+npm install
+VITE_API_URL=http://localhost:8080 VITE_API_CHECKIN_URL=http://localhost:8081 npm run dev
+# http://localhost:5173
+```
+
+> On first start the reservation service creates a **demo admin account** (`admin` / `admin123`). It is for local demos only — change it before any real deployment.
+
+To run the production-style setup instead, build the three Docker images (`frontend/`, `FlightReservationApplication/`, `FlightCheckInApplication/`); the frontend image's `nginx.conf` does the `/api` routing exactly as on EKS.
+
+---
+
+## Deploy to AWS
+
+> ⚠️ This creates billable resources (EKS control plane, NAT Gateway, 4 × `c7i-flex.large`, RDS). Run `terraform destroy` when you are done.
+
+**1. Provision the infrastructure**
+
+```bash
+cd Terraform
+cp terraform.tfvars.example terraform.tfvars    # then edit: admin_cidr, key_name, rds_password, alert_email
+terraform init && terraform validate
+terraform plan
+terraform apply
+```
+
+Confirm the SNS subscription email that AWS sends to `alert_email`. Use `aws configure` or an instance role for AWS credentials — never put keys in Terraform files.
+
+**2. Prepare the database and cluster access (from VM2, which is inside the VPC)**
+
+```bash
+RDS_HOST=<rds_endpoint> RDS_USER=<user> RDS_PASSWORD=<password> ./Terraform/scripts/create-checkin-db.sh
+aws eks update-kubeconfig --region ap-south-1 --name flight-reservation-dev-eks
+./Terraform/scripts/install-argocd.sh
+```
+
+**3. Configure Jenkins on VM1** — add the `sonarqube-token` and `github` credentials, define a SonarQube server named `Sonarqube`, and create a Pipeline job that uses the root `Jenkinsfile`.
+
+**4. Fill in the environment values**
+
+- `gitops/configmap.yaml` — set the RDS endpoint (`terraform output rds_endpoint`) and, once known, `FRONTEND_URL`.
+- Create the DB credentials Secret from the template and apply it by hand:
+
+```bash
+cp gitops/secret.example.yaml gitops/secret.yaml     # edit with the real RDS credentials
+kubectl create namespace flight-reservation
+kubectl apply -f gitops/secret.yaml
+```
+
+**5. First release** — run the Jenkins pipeline so ECR contains images and the GitOps manifests point at them, then hand control to Argo CD:
+
+```bash
+kubectl apply -f argocd-application.yaml
+kubectl get svc flight-frontend -n flight-reservation     # public address of the app
+```
+
+**6. Install monitoring**
+
+```bash
+./Terraform/scripts/install-monitoring.sh
+```
+
+From here on, every push that goes through Jenkins is rolled out to the cluster automatically. More detail is in [`README-DEPLOYMENT.md`](./README-DEPLOYMENT.md).
+
+---
 
 ## Security notes
 
-- `gitops/secret.example.yaml` ships with a `CHANGE_ME_STRONG_PASSWORD` placeholder. Copy it to `gitops/secret.yaml`, fill in the real RDS credentials, and never commit that file (it's covered by `.gitignore`).
-- The `application.properties` files under each Spring Boot service take their datasource URL/username/password entirely from environment variables (`SPRING_DATASOURCE_URL`, `SPRING_DATASOURCE_USERNAME`, `SPRING_DATASOURCE_PASSWORD`) with only local-dev defaults committed — no live credentials or endpoints are checked into this repository.
-- AWS access keys are never stored in Jenkins, `terraform.tfvars`, or Git — ECR auth uses the VM1 instance IAM role, per the runbook's credentials rule.
-- The `FRA-SCREENSHOTS/` images include a demo profile page with sample personal details used purely for testing — swap it for a screenshot with placeholder data if you plan to publish this repository publicly.
+- **Network** — the EKS API endpoint is private (reachable only from inside the VPC via VM2); RDS is in private database subnets, encrypted at rest and reachable only from within the VPC; Jenkins/SonarQube/SSH are open only to the administrator's IP.
+- **Credentials at runtime** — the backends receive `SPRING_DATASOURCE_USERNAME` / `SPRING_DATASOURCE_PASSWORD` from a Kubernetes Secret and the JDBC URL from a ConfigMap. The Secret is applied manually and is intentionally excluded from the GitOps kustomization.
+- **AWS access** — Jenkins and the monitoring VM use IAM instance roles; no AWS access keys are stored in Jenkins or in Git.
+- **Containers** — backend images run as a non-root user.
+- **Demo defaults** — the seeded `admin` account and the simulated payment page are for demonstration only.
+
+---
 
 ## Roadmap
 
-Ideas for extending this project further:
-- Add a `docker-compose.yml` for a one-command local stack (frontend + both services + MariaDB)
-- Wire up Spring Boot Actuator/Micrometer so Prometheus can scrape real application metrics, not just cluster metrics
-- Add automated frontend tests to the Jenkins pipeline (Testing Library is already a dependency)
-- Introduce a staging environment/namespace ahead of `main` in the GitOps flow
-- Move the RDS endpoint/frontend URL out of `gitops/configmap.yaml` and into Terraform outputs consumed by CI, so nothing needs manual editing after `terraform apply`
+Ideas for taking this further:
+
+- Run unit tests in the Jenkins pipeline (currently skipped for faster builds) and publish JaCoCo coverage to SonarQube
+- Work through the open SonarQube findings
+- Enforce `ROLE_ADMIN` at the API layer for `/api/flights/**` (admin actions are currently hidden in the UI; the API requires a valid JWT)
+- Remote Terraform state (S3 + state locking) and a separate staging environment
+- Ingress with TLS (AWS Load Balancer Controller) instead of a plain `LoadBalancer` Service; add HPAs
+- Enable Spring Boot Actuator/Micrometer and a `ServiceMonitor` so Prometheus scrapes application metrics, not only cluster metrics
+- `docker-compose.yml` for a one-command local stack
+- Frontend tests (Testing Library is already a dependency) in the pipeline
+
+---
 
 ## Author
 
 **Anurag Patil** — DevOps Engineer
-GitHub: [AnuragPatil-cloud](https://github.com/AnuragPatil-cloud)
 
----
+- GitHub: [@AnuragPatil-cloud](https://github.com/AnuragPatil-cloud)
+- Email: [anurag.patil.devops@gmail.com](mailto:anurag.patil.devops@gmail.com)
 
-*No license file is currently included — add one (MIT, Apache-2.0, etc.) if you intend to open-source this repository.*
+If you're reviewing this project, the quickest tour is: the [architecture](#architecture) → the [Jenkins](#cicd-pipeline-jenkins--ecr) and [Argo CD](#gitops-deployment-argo-cd--eks) screenshots → the [`Terraform/`](./Terraform) modules.
